@@ -3,3 +3,4 @@ anthropic==0.40.0
 apscheduler==3.10.4
 SpeechRecognition==3.10.4
 requests==2.32.3
+supabase==2.10.0
