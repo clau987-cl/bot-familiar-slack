@@ -186,16 +186,30 @@ def procesar_texto(texto: str, usuario: str, say):
 # ─────────────────────────────────────────────
 @app.message()
 def handle_mensaje(message, say):
-    # Ignorar mensajes del propio bot y mensajes sin texto
+    # Ignorar mensajes del propio bot
     if message.get("bot_id"):
         return
-    if message.get("subtype"):
+
+    user_id  = message.get("user", "")
+    subtype  = message.get("subtype", "")
+
+    # Los audios llegan como file_share — procesarlos primero
+    if subtype == "file_share":
+        archivos = message.get("files", [])
+        for archivo in archivos:
+            mimetype = archivo.get("mimetype", "")
+            if "audio" in mimetype or "video" in mimetype:
+                _procesar_audio_slack(archivo, user_id, say)
+                return
+        return
+
+    # Ignorar otros subtypes (edits, deletes, etc.)
+    if subtype:
         return
 
     texto   = message.get("text", "").strip()
-    user_id = message.get("user", "")
 
-    # Manejo de archivos de audio adjuntos
+    # Manejo de archivos de audio en mensajes normales (sin subtype)
     archivos = message.get("files", [])
     for archivo in archivos:
         mimetype = archivo.get("mimetype", "")
