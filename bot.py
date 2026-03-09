@@ -98,6 +98,7 @@ def analizar_con_claude(texto: str) -> dict:
 
 
 def analizar_imagen_con_claude(imagen_b64: str, media_type: str, texto_acompanante: str = "") -> dict:
+    """Analiza una imagen con Claude Vision y devuelve el tipo de item."""
     content = [
         {
             "type": "image",
@@ -169,6 +170,7 @@ def descargar_archivo_slack_bytes(url: str) -> bytes:
 # SUBIDA A SUPABASE STORAGE
 # ─────────────────────────────────────────────
 def subir_imagen_supabase(nombre: str, datos: bytes, content_type: str) -> str:
+    """Sube una imagen al bucket 'imagenes' y devuelve la URL pública."""
     supabase.storage.from_("imagenes").upload(
         path=nombre,
         file=datos,
@@ -181,6 +183,7 @@ def subir_imagen_supabase(nombre: str, datos: bytes, content_type: str) -> str:
 # TRANSCRIPCIÓN DE AUDIO
 # ─────────────────────────────────────────────
 def transcribir_audio(audio_path: str) -> str | None:
+    """Transcribe audio usando ffmpeg + Google Speech Recognition."""
     try:
         import speech_recognition as sr
 
@@ -244,10 +247,14 @@ def _procesar_imagen_slack(archivo: dict, user_id: str, say, texto_acompanante: 
     nombre   = f"{ts}_{user_id}.{ext}"
 
     try:
+        # Descargar imagen de Slack
         imagen_bytes = descargar_archivo_slack_bytes(url_privada)
+
+        # Subir a Supabase Storage
         imagen_url = subir_imagen_supabase(nombre, imagen_bytes, mimetype)
         logger.info(f"Imagen subida a Supabase: {imagen_url}")
 
+        # Analizar con Claude Vision
         imagen_b64 = base64.b64encode(imagen_bytes).decode()
         resultado = analizar_imagen_con_claude(imagen_b64, mimetype, texto_acompanante)
 
@@ -256,6 +263,7 @@ def _procesar_imagen_slack(archivo: dict, user_id: str, say, texto_acompanante: 
             emoji = EMOJIS.get(resultado["tipo"], "✅")
             say(f"🖼 {emoji} {resultado['confirmacion']}")
         else:
+            # Si Claude no detecta nada específico, guardar como PENDIENTE genérico
             guardar("PENDIENTE", f"Imagen de {usuario}", None, usuario, imagen_url)
             say(f"🖼 Imagen guardada en el panel.")
 
@@ -295,8 +303,9 @@ def _procesar_audio_slack(archivo: dict, user_id: str, say):
 # ─────────────────────────────────────────────
 # EVENTOS DE SLACK
 # ─────────────────────────────────────────────
-@app.message()
-def handle_mensaje(message, say):
+@app.event("message")
+def handle_mensaje(body, say):
+    message = body.get("event", {})
     if message.get("bot_id"):
         return
 
@@ -305,18 +314,22 @@ def handle_mensaje(message, say):
     texto    = message.get("text", "").strip()
     archivos = message.get("files", [])
 
+    # file_share: archivos adjuntos
     if subtype == "file_share" or archivos:
         for archivo in archivos:
             mimetype = archivo.get("mimetype", "")
 
+            # Imágenes
             if mimetype.startswith("image/"):
                 _procesar_imagen_slack(archivo, user_id, say, texto)
                 return
 
+            # Audio / Video
             if "audio" in mimetype or "video" in mimetype:
                 _procesar_audio_slack(archivo, user_id, say)
                 return
 
+        # Si hay archivos pero no son imagen ni audio, ignorar
         if not texto:
             return
 
@@ -349,7 +362,7 @@ def cmd_listo(ack, say, command):
         marcar_listo(item_id)
         say(f"✅ ¡Listo! El item #{item_id} queda completado.")
     except (ValueError, KeyError):
-        say("Uso: /listo [número]\nEjemplo: /listo 3")
+        say("Uso: `/listo [número]`\nEjemplo: `/listo 3`")
 
 
 @app.command("/ayuda")
@@ -357,9 +370,9 @@ def cmd_ayuda(ack, say):
     ack()
     say(
         "📖 *Comandos disponibles:*\n\n"
-        "/resumen — resumen completo de pendientes activos\n"
-        "/listo 3 — marca el item #3 como completado\n"
-        "/ayuda — esta ayuda\n\n"
+        "`/resumen` — resumen completo de pendientes activos\n"
+        "`/listo 3` — marca el item #3 como completado\n"
+        "`/ayuda` — esta ayuda\n\n"
         "💡 *Escribe mensajes normales como:*\n"
         "• _hay que arreglar el techo antes de marzo_\n"
         "• _junta con los García el viernes 4_\n"
